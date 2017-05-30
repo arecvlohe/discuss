@@ -2,11 +2,12 @@ defmodule Discuss.TopicController do
   use Discuss.Web, :controller
 
   alias Discuss.Topic
+  alias Discuss.Comment
 
   plug Discuss.Plugs.RequireAuth when action in [:new, :edit, :create, :update, :delete]
   plug :check_topic_owner when action in [:update, :edit, :delete]
 
-  def index(conn, _params) do
+  def index(conn, params) do
     topics = Repo.all(Topic)
     render conn, "index.html", topics: topics
   end
@@ -16,7 +17,7 @@ defmodule Discuss.TopicController do
     render conn, "new.html", changeset: changeset
   end
 
-  def create(conn, %{"topic" => topic}) do
+  def create(conn, %{"topic" => topic} = params) do
     changeset = conn.assigns.user
       |> build_assoc(:topics)
       |> Topic.changeset(topic)
@@ -73,8 +74,28 @@ defmodule Discuss.TopicController do
     end
   end
 
-  def view(conn, %{"id" => topic_id}) do
-    topic = Repo.get(Topic, topic_id)
-    render conn, "view.html", topic: topic
+  def show(conn, %{"id" => topic_id}) do
+    topic = Repo.get!(Topic, topic_id)
+    comments = Repo.all(from(c in Comment, where: c.topic_id == ^topic_id))
+    changeset = Comment.changeset(%Comment{}, %{})
+    
+    render conn, "show.html", topic: topic, changeset: changeset, comments: comments
   end
+
+  
+  def create_comment(conn, %{"comment" => comment}) do
+    topic = Repo.get!(Topic, comment["topic_id"])
+    comments = Repo.all(from(c in Comment, where: c.topic_id == ^comment["topic_id"]))
+    changeset = build_assoc(topic, :comments, %{user_id: conn.assigns.user.id}) |> Comment.changeset(comment)
+    
+    case Repo.insert(changeset) do
+      {:ok, _comment} ->
+        conn
+        |> put_flash(:info, "Comment was successfully saved!")
+        |> redirect(to: topic_path(conn, :show, comment["topic_id"]))
+      {:error, changeset} ->
+        render conn, "show.html", topic: topic, changeset: changeset, comments: comments
+    end
+  end
+
 end
